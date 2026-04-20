@@ -1,34 +1,92 @@
-version: '3.8'
+version: "3.9"
 
 services:
-#Broker de mensajes para Celery
+  web:
+    build:
+      context: ./apps/web
+    container_name: hero-web
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY}
+    depends_on:
+      api:
+        condition: service_started
+
+  api:
+    build:
+      context: ./apps/api
+    container_name: hero-api
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg://hero:hero@postgres:5432/hero_ai
+      REDIS_URL: redis://redis:6379/0
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      GOOGLE_TEXT_MODEL: ${GOOGLE_TEXT_MODEL:-gemini-2.5-pro}
+      GOOGLE_IMAGE_MODEL: ${GOOGLE_IMAGE_MODEL:-gemini-2.5-flash-preview-image-generation}
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY}
+      LOCAL_ASSET_DIR: /app/storage
+      CORS_ALLOW_ORIGINS: http://localhost:3000
+    volumes:
+      - story_assets:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    build:
+      context: ./apps/api
+    container_name: hero-worker
+    command: celery -A app.workers.celery_app worker --loglevel=info
+    environment:
+      DATABASE_URL: postgresql+psycopg://hero:hero@postgres:5432/hero_ai
+      REDIS_URL: redis://redis:6379/0
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      GOOGLE_TEXT_MODEL: ${GOOGLE_TEXT_MODEL:-gemini-2.5-pro}
+      GOOGLE_IMAGE_MODEL: ${GOOGLE_IMAGE_MODEL:-gemini-2.5-flash-preview-image-generation}
+      LOCAL_ASSET_DIR: /app/storage
+    volumes:
+      - story_assets:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
   redis:
-    image: "redis:alpine"
+    image: redis:7-alpine
+    container_name: hero-redis
     ports:
       - "6379:6379"
 
-#API Principal (FastAPI)
-
-  api:
-    build: .
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-    volumes:
-      - .:/app
+  postgres:
+    image: postgres:16-alpine
+    container_name: hero-postgres
     ports:
-      - "8000:8000"
-    env_file:
-      - .env
-    depends_on:
-      - redis
-
-#Worker de Celery (IA Scripting & Images)
-
-  worker:
-    build: .
-    command: celery -A workers.celery_app worker --loglevel=info
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: hero_ai
+      POSTGRES_USER: hero
+      POSTGRES_PASSWORD: hero
     volumes:
-      - .:/app
-    env_file:
-      - .env
-    depends_on:
-      - redis
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hero -d hero_ai"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
+  story_assets:
