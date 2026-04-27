@@ -1,5 +1,5 @@
 import { SignIn } from "@clerk/nextjs";
-import styles from "./page.module.css";
+import styles from "../page.module.css";
 
 export default function SignInPage() {
   return (
@@ -8,7 +8,7 @@ export default function SignInPage() {
         <h1 className={styles.title}>Hero Adventure AI</h1>
         <p className={styles.subtitle}>Crea cómics educativos personalizados para tus niños</p>
       </div>
-      <SignIn routing="hash" />
+      <SignIn path="/sign-in" routing="path" forceRedirectUrl="/dashboard" />
     </div>
   );
 }

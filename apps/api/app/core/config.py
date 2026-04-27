@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     google_api_key: str = ""
     google_text_model: str = "gemini-2.5-pro"
     google_image_model: str = "gemini-2.5-flash-preview-image-generation"
+    gcp_project_id: str = ""
+    gcp_location: str = "us-central1"
 
     clerk_secret_key: str = ""
 

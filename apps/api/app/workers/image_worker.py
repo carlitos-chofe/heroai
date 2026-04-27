@@ -9,7 +9,8 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from celery import Task
 from sqlmodel import Session, select
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
@@ -24,10 +25,6 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
-def _configure_genai():
-    genai.configure(api_key=settings.google_api_key)
-
-
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=2, min=4, max=30),
@@ -36,19 +33,28 @@ def _configure_genai():
 )
 def _generate_image_bytes(prompt: str) -> bytes:
     """Call Gemini image model and return PNG bytes."""
-    _configure_genai()
-    model = genai.GenerativeModel(settings.google_image_model)
-    response = model.generate_content(
-        prompt,
-        generation_config=genai.types.GenerationConfig(
-            response_mime_type="image/png",
+    client = genai.Client(
+        vertexai=True,
+        project=settings.gcp_project_id,
+        location=settings.gcp_location,
+    )
+    
+    # Use generate_content for gemini multimodal models that output images
+    response = client.models.generate_content(
+        model=settings.google_image_model,
+        contents=[prompt],
+        config=types.GenerateContentConfig(
+            temperature=1,
+            response_modalities=["IMAGE"],
         ),
     )
-    # Extract image bytes from response
-    for part in response.candidates[0].content.parts:
-        if hasattr(part, "inline_data") and part.inline_data:
-            return part.inline_data.data
-    raise ValueError("No image data in model response")
+    
+    if response.candidates and response.candidates[0].content.parts:
+        for part in response.candidates[0].content.parts:
+            if part.inline_data and part.inline_data.data:
+                return part.inline_data.data
+                
+    raise ValueError("No image was returned by the model")
 
 
 def _save_image(story_id: str, panel_order: int, image_bytes: bytes) -> str:

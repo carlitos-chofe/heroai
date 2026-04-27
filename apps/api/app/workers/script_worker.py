@@ -8,7 +8,7 @@ import logging
 import re
 from datetime import datetime, timezone
 
-import google.generativeai as genai
+from google import genai
 from celery import Task
 from sqlmodel import Session, select
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
@@ -22,10 +22,6 @@ from app.workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
-
-
-def _configure_genai():
-    genai.configure(api_key=settings.google_api_key)
 
 
 def _age_rules(age: int) -> str:
@@ -148,11 +144,15 @@ SCRIPT TO REVIEW:
     reraise=True,
 )
 def _call_gemini_text(prompt: str) -> str:
-    _configure_genai()
-    model = genai.GenerativeModel(settings.google_text_model)
-    response = model.generate_content(
-        prompt,
-        generation_config=genai.types.GenerationConfig(
+    client = genai.Client(
+        vertexai=True,
+        project=settings.gcp_project_id,
+        location=settings.gcp_location,
+    )
+    response = client.models.generate_content(
+        model=settings.google_text_model,
+        contents=prompt,
+        config=genai.types.GenerateContentConfig(
             temperature=0.7,
             max_output_tokens=4096,
         ),
@@ -256,7 +256,7 @@ def generate_story_script(self: Task, story_id: str) -> dict:
                     image_prompt=image_prompt,
                     scene_description=panel_data["description"],
                     narrative_text=panel_data["narrative"],
-                    dialogue=panel_data["dialogue"],
+                    dialogue=json.dumps(panel_data["dialogue"], ensure_ascii=False) if isinstance(panel_data["dialogue"], (dict, list)) else str(panel_data["dialogue"]),
                     generation_status="pending",
                     created_at=datetime.now(timezone.utc),
                     updated_at=datetime.now(timezone.utc),
