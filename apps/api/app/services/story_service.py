@@ -1,3 +1,5 @@
+import shutil
+from pathlib import Path
 from datetime import datetime, timezone
 from typing import Optional
 import uuid
@@ -5,9 +7,11 @@ import uuid
 from fastapi import HTTPException, status
 from sqlmodel import Session, select
 
+from app.core.config import get_settings
 from app.models.child_profile import ChildProfile
 from app.models.story import Story
 from app.models.story_panel import StoryPanel
+from app.models.story_feedback import StoryFeedback
 from app.models.user import User
 from app.schemas.story import (
     StoryCreate,
@@ -143,6 +147,98 @@ def approve_story(session: Session, user: User, story_id: uuid.UUID) -> Story:
             },
         )
     story.status = "approved"
+    story.updated_at = datetime.now(timezone.utc)
+    session.add(story)
+    session.commit()
+    session.refresh(story)
+    return story
+
+
+def delete_story(session: Session, user: User, story_id: uuid.UUID) -> None:
+    story = get_story(session, user, story_id)
+    
+    # 0. Delete feedback (if any)
+    feedback_entries = session.exec(
+        select(StoryFeedback).where(StoryFeedback.story_id == story_id)
+    ).all()
+    for feedback in feedback_entries:
+        session.delete(feedback)
+
+    # 1. Delete panels
+    panels = get_story_panels(session, story_id)
+    for panel in panels:
+        session.delete(panel)
+
+    # 2. Delete story record
+    session.delete(story)
+    session.commit()
+
+    # 3. Delete physical files if they exist
+    settings = get_settings()
+    base_dir = Path(settings.local_asset_dir)
+    story_dir = base_dir / "stories" / str(story.id)
+    
+    if story_dir.exists() and story_dir.is_dir():
+        try:
+            shutil.rmtree(story_dir)
+        except Exception as e:
+            # We log it, but don't fail the API request since DB records are already gone
+            print(f"Error deleting physical files for story {story.id}: {e}")
+
+def regenerate_script(session: Session, user: User, story_id: uuid.UUID) -> Story:
+    story = get_story(session, user, story_id)
+    if story.status != "script_ready":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "invalid_state_transition",
+                "message": f"Cannot regenerate script for story in status '{story.status}'",
+            },
+        )
+    
+    # Delete existing panels
+    panels = get_story_panels(session, story_id)
+    for panel in panels:
+        session.delete(panel)
+        
+    story.status = "pending"
+    story.script_generated_at = None
+    story.error_message = None
+    
+    session.add(story)
+    session.commit()
+    session.refresh(story)
+    return story
+
+def retry_story(session: Session, user: User, story_id: uuid.UUID) -> Story:
+    story = get_story(session, user, story_id)
+    
+    if story.status != "failed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "invalid_state_transition", "message": f"Can only retry failed stories. Current status: '{story.status}'"}
+        )
+    
+    # Determine the phase where it failed.
+    # If script_generated_at is not set, it failed during script generation.
+    if not story.script_generated_at:
+        # Reset to pending to start over
+        story.status = "pending"
+        # Cleanup any orphan panels that might have been created
+        panels = get_story_panels(session, story_id)
+        for panel in panels:
+            session.delete(panel)
+    else:
+        # Script was generated, so it failed during image generation
+        story.status = "approved"
+        # Reset generation_status of failed panels to pending
+        panels = get_story_panels(session, story_id)
+        for panel in panels:
+            if panel.generation_status == "failed":
+                panel.generation_status = "pending"
+                session.add(panel)
+    
+    story.error_message = None
     story.updated_at = datetime.now(timezone.utc)
     session.add(story)
     session.commit()

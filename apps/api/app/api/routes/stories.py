@@ -23,12 +23,15 @@ from app.schemas.story import (
 from app.services.feedback_service import create_feedback
 from app.services.story_service import (
     approve_story,
+    regenerate_script,
     create_story,
     get_story,
     get_story_panels,
     get_story_script,
     get_story_status,
     list_stories,
+    delete_story,
+    retry_story,
 )
 from app.workers.celery_app import celery_app
 
@@ -145,3 +148,50 @@ def post_feedback(
     user: User = Depends(get_current_user),
 ):
     return create_feedback(session, user, story_id, data)
+
+
+@router.delete("/{story_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/{story_id}/regenerate-script", status_code=status.HTTP_202_ACCEPTED)
+def regenerate_story_script_route(
+    story_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    story = regenerate_script(session, user, story_id)
+    celery_app.send_task(
+        "app.workers.script_worker.generate_story_script",
+        kwargs={"story_id": str(story.id)},
+    )
+    return {"story_id": story.id, "status": story.status}
+
+@router.delete("/{story_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_story_endpoint(
+    story_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    delete_story(session, user, story_id)
+    return None
+
+@router.post("/{story_id}/retry", status_code=status.HTTP_202_ACCEPTED)
+def retry_failed_story(
+    story_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    story = retry_story(session, user, story_id)
+    
+    if story.status == "pending":
+        # Enqueue script generation
+        celery_app.send_task(
+            "app.workers.script_worker.generate_story_script",
+            kwargs={"story_id": str(story.id)},
+        )
+    elif story.status == "approved":
+        # Enqueue image generation
+        celery_app.send_task(
+            "app.workers.image_worker.generate_story_images",
+            kwargs={"story_id": str(story.id)},
+        )
+        
+    return {"story_id": story.id, "status": story.status}

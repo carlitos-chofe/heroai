@@ -65,10 +65,57 @@
 }
 
 .errorBox {
+  background: #fef2f2;
+  border: 1px solid #fee2e2;
+  border-radius: 8px;
+  padding: 1.5rem;
+  text-align: center;
+  margin-top: 1rem;
+}
+
+.errorText {
+  color: #ef4444;
+  font-weight: 500;
+  margin-bottom: 1.5rem;
+}
+
+.actions {
   display: flex;
-  flex-direction: column;
-  align-items: center;
   gap: 1rem;
+  margin-bottom: 1rem;
+  justify-content: center;
+}
+
+.btnRetry, .btnDelete {
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.btnRetry {
+  background: #f3f4f6;
+  color: #374151;
+  border: 1px solid #d1d5db;
+}
+
+.btnRetry:hover {
+  background: #e5e7eb;
+}
+
+.btnDelete {
+  background: #fef2f2;
+  color: #ef4444;
+  border: 1px solid #fca5a5;
+}
+
+.btnDelete:hover {
+  background: #fee2e2;
 }
 
 .errorText {

@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@clerk/nextjs";
 import Link from "next/link";
-import { getProfiles, getStories, Profile, StoryListItem } from "@/lib/api";
+import { getProfiles, getStories, deleteStory, retryStory, Profile, StoryListItem } from "@/lib/api";
 import ProfileCard from "@/components/ProfileCard";
 import StoryCard from "@/components/StoryCard";
 import styles from "./page.module.css";
@@ -15,29 +15,58 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const loadData = useCallback(async () => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const [p, s] = await Promise.all([
+        getProfiles(token),
+        getStories(token),
+      ]);
+      setProfiles(p);
+      setStories(s);
+    } catch (e: unknown) {
+      setError("Error cargando datos. Verifica tu conexión.");
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  }, [getToken]);
+
   useEffect(() => {
     if (!isLoaded || !isSignedIn) return;
+    loadData();
+  }, [isLoaded, isSignedIn, loadData]);
 
-    const load = async () => {
-      try {
-        const token = await getToken();
-        if (!token) return;
-        const [p, s] = await Promise.all([
-          getProfiles(token),
-          getStories(token),
-        ]);
-        setProfiles(p);
-        setStories(s);
-      } catch (e: unknown) {
-        setError("Error cargando datos. Verifica tu conexión.");
-        console.error(e);
-      } finally {
-        setLoading(false);
-      }
-    };
+  const handleDeleteStory = async (storyId: string) => {
+    if (!confirm("¿Estás seguro de que quieres eliminar esta historia?")) return;
+    
+    try {
+      const token = await getToken();
+      if (!token) return;
+      await deleteStory(token, storyId);
+      // Actualizar localmente
+      setStories(prev => prev.filter(s => s.id !== storyId));
+    } catch (e) {
+      console.error("Error al eliminar la historia", e);
+      alert("No se pudo eliminar la historia.");
+    }
+  };
 
-    load();
-  }, [isLoaded, isSignedIn, getToken]);
+  const handleRetryStory = async (storyId: string) => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const result = await retryStory(token, storyId);
+      // Actualizar localmente
+      setStories(prev => prev.map(s => 
+        s.id === storyId ? { ...s, status: result.status } : s
+      ));
+    } catch (e) {
+      console.error("Error al reintentar la historia", e);
+      alert("No se pudo reintentar la historia.");
+    }
+  };
 
   if (!isLoaded || loading) {
     return (
@@ -98,7 +127,12 @@ export default function DashboardPage() {
         ) : (
           <div className={styles.storyGrid}>
             {stories.map((s) => (
-              <StoryCard key={s.id} story={s} />
+              <StoryCard 
+                key={s.id} 
+                story={s} 
+                onDelete={handleDeleteStory}
+                onRetry={handleRetryStory}
+              />
             ))}
           </div>
         )}

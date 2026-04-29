@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
-import { getStoryStatus, StoryStatus } from "@/lib/api";
+import { getStoryStatus, deleteStory, retryStory, StoryStatus } from "@/lib/api";
 import styles from "./page.module.css";
 
 const STATUS_MESSAGES: Record<string, string> = {
@@ -45,10 +45,41 @@ export default function ProgressPage() {
   }, [storyId, getToken, router]);
 
   useEffect(() => {
+    // Si la historia está completada o ha fallado, no necesitamos seguir haciendo polling
+    if (storyStatus?.status === "completed" || storyStatus?.status === "failed") return;
+    
     checkStatus();
     const interval = setInterval(checkStatus, 4000);
     return () => clearInterval(interval);
-  }, [checkStatus]);
+  }, [checkStatus, storyStatus?.status]);
+
+  const handleDelete = async () => {
+    if (!confirm("¿Estás seguro de que quieres eliminar esta historia?")) return;
+    
+    try {
+      const token = await getToken();
+      if (!token) return;
+      await deleteStory(token, storyId);
+      router.push("/dashboard");
+    } catch (e) {
+      console.error("Error al eliminar la historia", e);
+      alert("No se pudo eliminar la historia.");
+    }
+  };
+
+  const handleRetry = async () => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+      setError(null);
+      const result = await retryStory(token, storyId);
+      setStoryStatus(prev => prev ? { ...prev, status: result.status } : null);
+      // El polling se reiniciará automáticamente gracias al useEffect
+    } catch (e) {
+      console.error("Error al reintentar la historia", e);
+      alert("No se pudo reintentar la historia.");
+    }
+  };
 
   const progress = storyStatus
     ? storyStatus.status === "generating_images"
@@ -94,6 +125,14 @@ export default function ProgressPage() {
         {error && (
           <div className={styles.errorBox}>
             <p className={styles.errorText}>{error}</p>
+            <div className={styles.actions}>
+              <button className={styles.btnRetry} onClick={handleRetry}>
+                Reintentar 🔁
+              </button>
+              <button className={styles.btnDelete} onClick={handleDelete}>
+                Eliminar 🗑️
+              </button>
+            </div>
             <button className={styles.btn} onClick={() => router.push("/dashboard")}>
               Volver al dashboard
             </button>

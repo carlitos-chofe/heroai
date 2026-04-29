@@ -174,6 +174,17 @@ export async function getStoryScript(token: string, storyId: string): Promise<St
   return apiFetch(`/api/v1/stories/${storyId}/script`, { token });
 }
 
+
+export async function regenerateStoryScript(
+  token: string,
+  storyId: string
+): Promise<{ story_id: string; status: string }> {
+  return apiFetch(`/api/v1/stories/${storyId}/regenerate-script`, {
+    method: "POST",
+    token,
+  });
+}
+
 export async function approveStory(
   token: string,
   storyId: string
@@ -192,6 +203,23 @@ export async function postFeedback(
   return apiFetch(`/api/v1/stories/${storyId}/feedback`, {
     method: "POST",
     body: JSON.stringify(data),
+    token,
+  });
+}
+
+export async function deleteStory(token: string, storyId: string): Promise<void> {
+  return apiFetch(`/api/v1/stories/${storyId}`, {
+    method: "DELETE",
+    token,
+  });
+}
+
+export async function retryStory(
+  token: string,
+  storyId: string
+): Promise<{ story_id: string; status: string }> {
+  return apiFetch(`/api/v1/stories/${storyId}/retry`, {
+    method: "POST",
     token,
   });
 }

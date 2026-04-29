@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
-import { getStoryScript, approveStory, StoryScript } from "@/lib/api";
+import { getStoryScript, approveStory, regenerateStoryScript, deleteStory, StoryScript } from "@/lib/api";
 import styles from "./page.module.css";
 
 export default function ScriptPage() {
@@ -15,6 +15,8 @@ export default function ScriptPage() {
   const [script, setScript] = useState<StoryScript | null>(null);
   const [loading, setLoading] = useState(true);
   const [approving, setApproving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -46,6 +48,35 @@ export default function ScriptPage() {
     }
   }
 
+  async function handleRegenerate() {
+    setRegenerating(true);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("No session");
+      await regenerateStoryScript(token, storyId);
+      router.push(`/stories/${storyId}/progress`);
+    } catch {
+      setError("Error al solicitar una nueva versión.");
+      setRegenerating(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!window.confirm("¿Estás seguro de que quieres eliminar esta historia? Esta acción no se puede deshacer.")) {
+      return;
+    }
+    setDeleting(true);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("No session");
+      await deleteStory(token, storyId);
+      router.push("/dashboard");
+    } catch {
+      setError("Error al eliminar la historia.");
+      setDeleting(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className={styles.centered}>
@@ -72,13 +103,6 @@ export default function ScriptPage() {
         </button>
         <div className={styles.headerRight}>
           <span className={styles.langBadge}>{script.language_target}</span>
-          <button
-            className={styles.btnApprove}
-            onClick={handleApprove}
-            disabled={approving}
-          >
-            {approving ? "Aprobando..." : "Aprobar y generar ilustraciones"}
-          </button>
         </div>
       </div>
 
@@ -110,13 +134,31 @@ export default function ScriptPage() {
       </div>
 
       <div className={styles.footer}>
-        <button
-          className={styles.btnApprove}
-          onClick={handleApprove}
-          disabled={approving}
-        >
-          {approving ? "Aprobando..." : "Aprobar y generar ilustraciones"}
-        </button>
+        <div className={styles.footerLeft}>
+          <button
+            className={`${styles.btnSecondary} ${styles.btnDanger}`}
+            onClick={handleDelete}
+            disabled={approving || deleting || regenerating}
+          >
+            {deleting ? "Eliminando..." : "Eliminar"}
+          </button>
+        </div>
+        <div className={styles.footerRight}>
+          <button
+            className={styles.btnSecondary}
+            onClick={handleRegenerate}
+            disabled={approving || deleting || regenerating}
+          >
+            {regenerating ? "Generando..." : "Nueva versión"}
+          </button>
+          <button
+            className={styles.btnApprove}
+            onClick={handleApprove}
+            disabled={approving || deleting || regenerating}
+          >
+            {approving ? "Aprobando..." : "Aprobar y generar ilustraciones"}
+          </button>
+        </div>
       </div>
     </main>
   );

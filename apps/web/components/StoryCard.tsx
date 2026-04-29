@@ -32,7 +32,15 @@ function storyHref(story: StoryListItem): string {
   }
 }
 
-export default function StoryCard({ story }: { story: StoryListItem }) {
+export default function StoryCard({ 
+  story, 
+  onRetry, 
+  onDelete 
+}: { 
+  story: StoryListItem;
+  onRetry?: (storyId: string) => void;
+  onDelete?: (storyId: string) => void;
+}) {
   const statusInfo = STATUS_LABELS[story.status] || { label: story.status, color: "#6b7280" };
   const link = storyHref(story);
 
@@ -57,6 +65,29 @@ export default function StoryCard({ story }: { story: StoryListItem }) {
           })}
         </span>
       </div>
+      
+      {story.status === "failed" && (
+        <div className={styles.actions}>
+          <button 
+            className={styles.btnRetry} 
+            onClick={(e) => {
+              e.preventDefault();
+              onRetry?.(story.id);
+            }}
+          >
+            Reintentar 🔁
+          </button>
+          <button 
+            className={styles.btnDelete} 
+            onClick={(e) => {
+              e.preventDefault();
+              onDelete?.(story.id);
+            }}
+          >
+            Eliminar 🗑️
+          </button>
+        </div>
+      )}
     </Link>
   );
 }
